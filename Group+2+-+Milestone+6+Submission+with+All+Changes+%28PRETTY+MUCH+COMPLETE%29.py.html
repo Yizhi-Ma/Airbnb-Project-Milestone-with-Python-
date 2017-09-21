@@ -1,0 +1,1173 @@
+
+# coding: utf-8
+
+# <h1 align="center"> IST 5001 </h1>
+# <h1 align="center"> Milestone 6: Final Report </h1>
+# <h3 align="center"> Riley Grennan, Stanley Lu, Yizhi Ma, Samuel Smith </h3>
+# <h3 align="center"> Submission Due: May 11th, 2017 </h3>
+
+# ## Background
+# 
+# Airbnb is an online marketplace that allows users to search for available rooms to be rented. Unlike the traditional hotel approach, Airbnb instead utilizes homeowners who have a room that they would like to rent out. As a result, customers gain access to a living arrangement that is more personal and diverse than a hotel. Airbnb has gained significant coverage in the media, and it is a popular resource for travelers. 
+# 
+# Airbnb is accessible through the company’s mobile app, available on both Android and iOS, and through a traditional Web browser. This provides flexibility to customers and allows them to find a room when they are on the go.
+
+# ## Business Problem
+# 
+# Our business problem is that we essentially want to gain an understanding of how users interact with the Airbnb website and mobile application. By exploring such components, we hope to identify behavioral patterns that may indicate when a user is likely to book a room, and potential weaknesses in our system that may be illustrated by the user’s session log. For example, if users have a high rate of switching from mobile to desktop to book a room, there may be usability issues with the company’s mobile app that should be investigated further.
+
+# ## Research Questions
+# 
+# 1. Are users more likely to book a room with Airbnb at certain times of the day? If so, marketing efforts should be put into advertising at these times and making sure customer support staff are available.
+# 2. Are users of certain devices (e.g., iPad) more likely to book a room? Suppose iOS users are found to have a high booking rate; we could offer an incentive in the App Store to increase our iOS customer base even more.
+# 3. Do users have a high rate of switching from the Airbnb app to a desktop to make a reservation? If so, perhaps our mobile app needs to have improved functionality or provide additional features to ease the booking process.
+# 4. Are users with shorter session times more likely to make a reservation? If so, we need to design our user interface to encourage shorter session times.
+# 5. Are users with multiple sessions on single days more likely to book a room? If so, we may want to implement a cookie tracking algorithm to provide an additional incentive, such as a discount or reward, for users who keep coming back to look for a room.
+
+# ## Data Sources
+# 
+# Our data comes from a contest initiated by Airbnb in 2015, the Airbnb User Pathways Challenge, where the company hoped to gain access to external data scientists who could help provide meaningful analyses to assist the company in its operations.
+# 
+# **Airbnb User Pathways Challenge:**
+# 
+# http://databits.io/challenges/airbnb-user-pathways-challenge
+# 
+# The dataset contains an activity log of thousands of users who accessed Airbnb through various devices, such as iPads and traditional PCs, and contains a recording of actions the users performed during their visit. Below is a list of the variables included in the dataset:
+# 
+# * **id_visitor**: ID of the visitor
+# * **id_session**: ID of the session
+# * **dim_session_number**: Number of the session
+# * **dim_user_agent**: User agent of the session
+# * **dim_device_app_combo**: Determines if device and app were both used
+# * **ds**: Date stamp of session
+# * **ts_min**: Time of session start
+# * **ts_max**: Time of session end
+# * **did_search**: Determines if user performed a search during session
+# * **sent_message**: Determines if user sent a message during session
+# * **sent_booking_request**: Determines if user sent a booking request during session
+# 
+# The dataset is written as a text file and it is delimited with the vertical bar symbol (i.e., ‘|’). Airbnb also provided a data dictionary as a reference for the variables included in the dataset.
+# 
+# **Dataset:**
+# 
+# http://databits.io/static_content/challenges/airbnb-user-pathways-challenge/airbnb_session_data.txt
+# 
+# **Data Dictionary:**
+# 
+# http://databits.io/static_content/challenges/airbnb-user-pathways-challenge/data_dictionary.rtf
+# 
+# 
+
+# ## Data Manipulation
+
+# In[1]:
+
+# Load required packages for data manipulation
+import pandas as pd
+import numpy as np
+from sklearn import model_selection
+from sklearn import metrics
+from sklearn import svm
+from sklearn.ensemble import RandomForestClassifier
+from sklearn import tree
+from sklearn import neural_network
+import plotly
+import plotly.plotly as py
+import plotly.graph_objs as go
+
+
+# In[ ]:
+
+# Set the parameters for using plotly
+plotly.tools.set_credentials_file(username='ss1995', api_key='mAN4tXkkUj4Ex9ESQY9h')
+
+
+# In[ ]:
+
+# Read in dataset
+df = pd.read_csv("airbnb_session_data.txt", sep='|')
+
+# Rename columns with more meaningful variables
+df = df.rename(columns={'id_visitor':"IDVis", 'id_session':"IDSession", 'dim_session_number':"SesNum", 
+                        'dim_user_agent':"UserAgent", 'dim_device_app_combo':"DevAppCombo", 'ds':"Date", 
+                        'ts_min':"SesStart", 'ts_max':"SesEnd", 'did_search':"DidSearch", 
+                        'sent_message':"SentMSG", 'sent_booking_request':"SentBR", 'next_id_session':"NextSesID", 
+                        'next_dim_session_number':"NextSesNum", 'next_dim_user_agent':"NextUserAgent", 
+                        'next_dim_device_app_combo':"NextDevAppCombo", 'next_ds':"NextDate", 'next_ts_min':"NextSesStart",
+                        'next_ts_max':"NextSesEnd", 'next_did_search':"NextDidSearch", 
+                        'next_sent_message':"NextSentMSG", 'next_sent_booking_request':"NextSentBR"})
+
+# Show head of dataset
+df.head(7)
+
+
+# In[ ]:
+
+# Drop unnecessary columns
+df = df.drop(['UserAgent', 'IDSession', 'SesNum', 'NextSesID', 'NextSesNum', 'NextUserAgent', 'Date', 'NextDate'], axis=1)
+
+
+# In[ ]:
+
+df.describe()
+
+
+# In the dataset from Airbnb, each user has their session recorded for up to two visits. If the user only visited Airbnb once, all of the values for the "NextSesStart", "NextSesEnd", etc. columns are null. Since null values would interfere with our analysis methods, we recode the null values as 0 to indicate that the user did not come back for a second visit.
+
+# In[ ]:
+
+# Show rows with null values for "next" columns
+null = df[df.NextDevAppCombo.isnull()]
+
+null
+
+
+# In[ ]:
+
+null.shape
+
+
+# In[ ]:
+
+null.dtypes
+
+
+# There are a total of 630 users who did not come back for a second visit. The null values in these records can prevent us from being able to run certain analysis methods, so we will recode them as 0 to indicate "no" for these rows which means that a second visit record does not exist for these users.
+
+# In[ ]:
+
+#Replace NaN values with 0
+df.NextSesStart = df.NextSesStart.fillna(0)
+df.NextSesEnd = df.NextSesEnd.fillna(0)
+df.NextDidSearch = df.NextDidSearch.fillna(0)
+df.NextSentMSG = df.NextSentMSG.fillna(0)
+df.NextSentBR = df.NextSentBR.fillna(0)
+
+
+# In[ ]:
+
+# Check to make sure everything looks OK
+df.head(7)
+
+
+# In[ ]:
+
+df.dtypes
+
+
+# In[ ]:
+
+# Convert column datatypes for consistancy
+df.NextDidSearch = df.NextDidSearch.astype(int)
+df.NextSentMSG = df.NextSentMSG.astype(int)
+df.NextSentBR = df.NextSentBR.astype(int)
+df.dtypes
+
+
+# In[ ]:
+
+# Now, we'll add a column to the dataset to indicate if a user came back for a future session
+df['CameBack'] = 0 # Initializing all to 0 for simplicity
+
+
+# In[ ]:
+
+# Use a for loop to determine if the user came back to AirBnb
+for x in range(0,len(df)):
+    if (df.NextDevAppCombo[x] == 1 or 
+        df.NextDidSearch[x] == 1 or 
+        df.NextSentBR[x] == 1 or 
+        df.NextSentMSG[x] == 1):
+            df.loc[x, 'CameBack'] = 1 # Assign 1 to cell 
+    else:
+        df.loc[x, 'CameBack'] = 0 # Assign 0 to cell
+
+
+# In[ ]:
+
+# Confirm that all values in CameBack have been recoded properly
+df.CameBack.unique()
+
+
+# In[ ]:
+
+# Convert time stamp columns to DateTime
+df.SesStart = pd.to_datetime(df.SesStart)
+df.SesEnd = pd.to_datetime(df.SesEnd)
+
+df.NextSesStart = pd.to_datetime(df.NextSesStart)
+df.NextSesEnd = pd.to_datetime(df.NextSesEnd)
+
+
+# In[ ]:
+
+# Add a column for the total session time
+df['TotSesTime'] = df.SesEnd - df.SesStart
+df['TotNextSesTime'] = df.NextSesEnd - df.NextSesStart
+df['TotalTime'] = df.TotSesTime + df.TotNextSesTime
+
+
+# In[ ]:
+
+# Rearrange columns in dataframe
+cols = ['IDVis', 'DevAppCombo', 'SesStart', 'SesEnd', 'TotSesTime', 'DidSearch', 'SentMSG', 'SentBR', 
+'NextDevAppCombo', 'NextSesStart', 'NextSesEnd', 'TotNextSesTime', 'NextDidSearch', 'NextSentMSG', 
+'NextSentBR', 'CameBack', 'TotalTime']
+
+df = df[cols]
+df.head()
+
+
+# In[ ]:
+
+# Add a column to indicate if user switched from mobile to desktop for second session
+df['Switched'] = 0
+
+# Recode DevAppCombo columns at a higher level of abstractions
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='iPhone - iOS',value='App')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='Desktop - Chrome',value='Desktop')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='Android Phone - Web',value='MobileWeb')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='Android Phone - Moweb',value='MobileWeb')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='Unknown - Moweb',value='MobileWeb')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='Desktop - Safari',value='Desktop')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='Android Tablet - Moweb',value='MobileWeb')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='Android Tablet - Android',value='App')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='Android Tablet - Web',value='MobileWeb')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='iPad - iOS',value='App')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='Desktop - IE',value='Desktop')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='iPad - Web',value='MobileWeb')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='Desktop - Firefox',value='Desktop')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='Android Phone - Android',value='App')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='iPhone - Web',value='MobileWeb')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='Other - Other',value='Other')
+df.DevAppCombo = df.DevAppCombo.replace(to_replace='iPhone - Moweb',value='MobileWeb')
+
+# Recode NextDevAppCombo columns at a higher level of abstractions
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='iPhone - iOS',value='App')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='Desktop - Chrome',value='Desktop')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='Android Phone - Web',value='MobileWeb')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='Android Phone - Moweb',value='MobileWeb')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='Unknown - Moweb',value='MobileWeb')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='Desktop - Safari',value='Desktop')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='Android Tablet - Moweb',value='MobileWeb')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='Android Tablet - Android',value='App')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='Android Tablet - Web',value='MobileWeb')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='iPad - iOS',value='App')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='Desktop - IE',value='Desktop')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='iPad - Web',value='MobileWeb')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='Desktop - Firefox',value='Desktop')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='Android Phone - Android',value='App')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='iPhone - Web',value='MobileWeb')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='Other - Other',value='Other')
+df.NextDevAppCombo = df.NextDevAppCombo.replace(to_replace='iPhone - Moweb',value='MobileWeb')
+
+
+# In[ ]:
+
+# Confirm changes were successful
+df.head()
+
+
+# In[ ]:
+
+# Determine if user switched from mobile to desktop
+for x in range(0, len(df)):
+    if df.DevAppCombo[x] != 'Desktop' and df.NextDevAppCombo[x] == 'Desktop':
+        df.loc[x, 'Switched'] = 1
+
+
+# In[ ]:
+
+# Confirm changes were successful
+df.head(7)
+
+
+# ## Data Summarization and Visualization
+
+# In[ ]:
+
+# Enable inline plotting in notebook
+get_ipython().magic('matplotlib inline')
+
+# Import the matplotlib.pyplot
+import matplotlib.pyplot as plt
+
+
+# In[ ]:
+
+# Show box plot of TotalTime variable. First convert TimeDelta to seconds
+seconds = (pd.to_timedelta(df.TotalTime,unit='d')+pd.to_timedelta(1,unit='s')).astype('timedelta64[s]')
+
+# Add total seconds column
+df['TotalSeconds'] = seconds
+
+
+# In[ ]:
+
+# Show descriptive statistics of total seconds column
+df.TotalSeconds.describe()
+
+
+# The above descriptive statistics show that there are no negative values for "TotalSeconds" in the dataset. 75% of visitors spent about 24 minutes or less navigating Airbnb. (1460 seconds / 60 seconds = ~ 24 minutes). We will move on to outlier detection now.
+
+# In[ ]:
+
+# Detect outliers for time spent on Airbnb website
+first_quantile = seconds.quantile(0.25)
+third_quantile = seconds.quantile(0.75)
+
+# Calculate IQR
+IQR = third_quantile - first_quantile
+
+
+# In[ ]:
+
+# Show box plot for total seconds on website
+df.TotalSeconds.plot.box()
+
+
+# In[ ]:
+
+# Outliers below the range (there are none)
+df[df['TotalSeconds']<first_quantile-1.5*IQR]
+
+
+# In[ ]:
+
+# Outliers above the range. Len method is used for simplicity
+len(df[df['TotalSeconds']>third_quantile+1.5*IQR])
+
+# To show all of the outliers above the range, use the following line of code:
+# df[df['TotalSeconds']>third_quantile+1.5*IQR]
+
+
+# We found 627 outliers above the boxplot and none below the boxplot.
+
+# In[ ]:
+
+df['TotalSeconds'].plot(kind='hist')
+plt.title('Histgram of Total Seconds')
+
+
+# In[ ]:
+
+#Density Plot
+df.TotalSeconds.plot(kind='kde')
+plt.title("Density of Total Seconds")
+
+
+# As shown above, the majority of users appear to have spent a relatively short amount of time on the Airbnb website.
+
+# In[ ]:
+
+# Correlation Plot
+df.corr()
+
+
+# In[ ]:
+
+# Summary statistics for dataset
+df.describe()
+
+
+# In[ ]:
+
+# Pie chart of Bookings Made During First Visit
+pie_chart_of_DevAppCombo = df['DevAppCombo']
+pie_chart_of_DevAppCombo.value_counts().plot(kind='pie', autopct='%.2f%%', colors = ['crimson','mediumseagreen','deepskyblue','tomato'])
+plt.axis('equal')
+plt.title('Percentage of Bookings Made by Platform During First Visit')
+plt.ylabel('')
+
+
+# From this graph we see that most users made their bookings through use of the company's App with MobileWeb and Desktop bookings close behind. A small portion of people used a method other than these that was not described in the original data set/dictionary.
+
+# In[ ]:
+
+pie_chart_of_DevAppCombo2 = df['NextDevAppCombo']
+pie_chart_of_DevAppCombo2.value_counts().plot(kind='pie', autopct='%.2f%%', colors = ['lime','dodgerblue','aquamarine','plum'])
+plt.axis('equal')
+plt.title('Percentage of Bookings Made by Platform During Second Visit')
+plt.ylabel('')
+
+
+# In comparison to the first visit, we see that use of the App to book has increased while use of MobileWeb and Desktop has decreased in response to that. We also see that the "Other" column has increased as well. This tells us that the experice provided through the application to the user may be better than the experice the user receives from the website.
+
+# In[ ]:
+
+#Plotting of Pie Graph
+pie_chart_of_booking = df['SentBR']
+pie_chart_of_booking.value_counts().plot(kind = 'pie', autopct = '%.2f%%', colors = ['crimson', 'dodgerblue'], labels = ['No', 'Yes'])
+plt.axis('equal')
+plt.title('Percentage of Users That Made a Booking Reservation On Their First Visit')
+plt.ylabel('')
+
+
+# From this Pie chart, we see that an overwhelming amount of users did not make a booking reservation upon their first visit. This would be concerning to a compant and further variables would need to be collected to explain why customers are not booking on their first visit.
+
+# In[ ]:
+
+#Plotting of pie graph
+pie_chart_of_booking2 = df['NextSentBR']
+pie_chart_of_booking2.value_counts().plot(kind = 'pie', autopct = '%.2f%%', colors = ['crimson','dodgerblue'], labels = ['No', 'Yes'])
+plt.axis('equal')
+plt.title('Percentage of Users That Made a Booking Reservation On Their Second Visit')
+plt.ylabel('')
+
+
+# From this pie chart, we see that not much has changed as most still did not make a booking reservation upon their second visit. This may indicate that the user experience is poor or that customers cannot find what they are looking for.
+
+# In[ ]:
+
+#Plotting of Pie Graph
+pie_chart_of_booking = df['CameBack']
+pie_chart_of_booking.value_counts().plot(kind = 'pie', autopct = '%.2f%%', colors = ['crimson', 'dodgerblue'], labels = ['No', 'Yes'])
+plt.axis('equal')
+plt.title('Percentage of Users That Returned For a Future Session')
+plt.ylabel('')
+
+
+# From the above pie graph, we see that roughly a quarter of customers did return for a future session though, as the previous pie graphs have demonstrated, this does not necessarily translate to more booking requests.
+
+# In[ ]:
+
+# Generate an aggregated DataFrame to represent the mean of TotalSeconds
+mean_total_seconds_by_combo = df[['DevAppCombo','TotalSeconds']].groupby('DevAppCombo').mean()
+
+# Recode the index
+mean_total_seconds_by_combo.index = ['App','MobileWeb','Desktop','Other']
+
+# Show the aggregated DataFrame
+mean_total_seconds_by_combo.index
+
+
+# In[ ]:
+
+mean_total_seconds_by_combo.plot(kind='bar', legend = False)
+plt.title('Average of Total Seconds by DevAppCombo on First Visit')
+plt.xticks(rotation=45)
+
+
+# From the above bar chart, we notice that the highest average session times tend to be for those that make their first visit with use of an app.
+# Those that make their first visit with use of a web browser on their mobile phones follow suit.
+
+# In[ ]:
+
+# Generate an aggregated DataFrame to represent the mean of TotalSeconds
+mean_total_seconds_by_combo2 = df[['NextDevAppCombo','TotalSeconds']].groupby('NextDevAppCombo').mean()
+
+# Recode the index
+mean_total_seconds_by_combo2.index = ['App','MobileWeb','Desktop','Other']
+
+# Show the aggregated DataFrame
+mean_total_seconds_by_combo2.index
+
+
+# In[ ]:
+
+mean_total_seconds_by_combo2.plot(kind='bar', legend = False)
+plt.title('Average of Total Seconds by DevAppCombo on Second Visit')
+plt.xticks(rotation=45)
+
+
+# Here, we noticed that, compared to the first visit, the highest average session time is held by use of the web through a mobile device. App session times are still the second highest average but has diminished compared to the first visit while Desktop and Other methods have increased in their average session times. 
+# 
+# Next, we will create a grouped bar chart to compare the total seconds of the first visit to the total seconds of the second visit.
+
+# In[ ]:
+
+# Create arrays of data to be used for the graph
+cols = ["App", "MobileWeb", "Desktop", "Other"]
+m1 = mean_total_seconds_by_combo.TotalSeconds
+m2 = mean_total_seconds_by_combo2.TotalSeconds
+a = [m1[0].astype(int), m1[1].astype(int), m1[2].astype(int), m1[3].astype(int)]
+b = [m2[0].astype(int), m2[1].astype(int), m2[2].astype(int), m2[3].astype(int)]
+
+# First bar chart
+trace1 = go.Bar(
+    x=cols,
+    y=a,
+    name='First Visit Total Seconds'
+)
+
+# Second bar chart
+trace2 = go.Bar(
+    x=cols,
+    y=b,
+    name='Second Visit Total Seconds'
+)
+
+# Combine data
+data = [trace1, trace2]
+layout = go.Layout(
+    barmode='group'
+)
+
+# Plot grouped bar chart
+fig = go.Figure(data=data, layout=layout)
+py.iplot(fig, filename='grouped-bar')
+
+
+# From the bar chart, we notice that the highest average inital session times tend to be for those that make their first visit with use of an app. Those that make their first visit with use of a web browser on their mobile phones follow suit.
+# We also noticed that, compared to the first visit, the highest average session time is held by use of the web through a mobile device. App session times are still the second highest average but has diminished compared to the first visit while Desktop and Other methods have increased in their average session times.
+
+# ## Regression Analysis
+
+# In[ ]:
+
+# Import modules import pandas as pd
+import statsmodels.api as sm
+from patsy import dmatrices
+import matplotlib.pyplot as plt
+
+# Configure inline mode
+get_ipython().magic('matplotlib inline')
+
+
+# In[ ]:
+
+# Create design matrices
+y, X = dmatrices('SentBR ~ TotalSeconds + SentMSG + DidSearch + DevAppCombo',
+                 data=df,
+                 return_type='dataframe')
+
+
+# In[ ]:
+
+# show head of y
+y.head()
+
+
+# In[ ]:
+
+# show head of X 
+X.head()
+
+
+# In[ ]:
+
+# Describe the logistic model 
+mod = sm.Logit(y,X)
+
+# Fit model
+fit = mod.fit()
+
+# Summarize model
+fit.summary()
+
+
+# In[ ]:
+
+# Show coefficient estimates 
+fit.params
+
+
+# In[ ]:
+
+# Show in‐sample prediction table (confusion matrix) 
+fit.pred_table()
+
+
+# In[ ]:
+
+# To diable warnings 
+import warnings
+warnings.filterwarnings("ignore")
+
+# Calculate average marginal effects
+mfx = fit.get_margeff()
+print(mfx.summary())
+
+
+# To summarize the above regression analysis, we see that desktop users are more likely to submit a
+# booking request than users of the mobile app. We also see that sending a message and performing a search positively influence the likelihood that the user will submit a booking request. The number of time that a user spends on the website has almost no influence on the likelihood that they will submit a booking request.
+
+# In[ ]:
+
+# Create design matrices
+y2, X2 = dmatrices('NextSentBR ~ NextDevAppCombo + TotalSeconds + NextSentMSG + NextDidSearch + SentBR + DevAppCombo + SentMSG + DidSearch + Switched + CameBack',
+                 data=df,
+                 return_type='dataframe')
+
+
+# In[ ]:
+
+# show head of y
+y2.head()
+
+
+# In[ ]:
+
+# show head of X 
+X2.head()
+
+
+# In[ ]:
+
+# Describe the logistic model 
+mod = sm.Logit(y2,X2)
+
+# Fit model
+fit = mod.fit()
+
+# Summarize model
+fit.summary()
+
+
+# In[ ]:
+
+# Show coefficient estimates 
+fit.params
+
+
+# In[ ]:
+
+# Show in‐sample prediction table (confusion matrix) 
+fit.pred_table()
+
+
+# In[ ]:
+
+# Calculate average marginal effects
+mfx = fit.get_margeff()
+print(mfx.summary())
+
+
+# As we can see from the above regression analysis summary, the number of time that a user spends on the website has almost no influence on the likelihood that they will submit a booking request on their second visit. Sending a message and performing a search on the second visit increase the likelihood of submitting a booking request on their second visit by approximately 2.3% and 1.7% respectively.
+
+# ## Classification
+
+# ### Step 1: Use Balanced Dataset
+
+# In[ ]:
+
+# Read in balanced data set
+bdf = pd.read_csv("airbnb_balanced_data.csv")
+
+
+# In[ ]:
+
+bdf.dtypes
+
+
+# In[ ]:
+
+# Rename columns
+bdf = bdf.rename(columns={'id_visitor':"IDVis", 'id_session':"IDSession", 'dim_session_number':"SesNum", 
+                        'dim_user_agent':"UserAgent", 'dim_device_app_combo':"DevAppCombo", 'ds':"Date", 
+                        'ts_min':"SesStart", 'ts_max':"SesEnd", 'did_search':"DidSearch", 
+                        'sent_message':"SentMSG", 'sent_booking_request':"SentBR", 'next_id_session':"NextSesID", 
+                        'next_dim_session_number':"NextSesNum", 'next_dim_user_agent':"NextUserAgent", 
+                        'next_dim_device_app_combo':"NextDevAppCombo", 'next_ds':"NextDate", 'next_ts_min':"NextSesStart",
+                        'next_ts_max':"NextSesEnd", 'next_did_search':"NextDidSearch", 
+                        'next_sent_message':"NextSentMSG", 'next_sent_booking_request':"NextSentBR"})
+
+
+# In[ ]:
+
+bdf.DidSearch.unique()
+
+
+# In[ ]:
+
+# Convert time stamp columns to DateTime
+bdf.SesStart = pd.to_datetime(bdf.SesStart)
+bdf.SesEnd = pd.to_datetime(bdf.SesEnd)
+
+
+# Add a column for the total session time
+bdf['TotSesTime'] = bdf.SesEnd - bdf.SesStart
+
+
+# Recode DevAppCombo columns at a higher level of abstractions
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='iPhone - iOS',value='App')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='Desktop - Chrome',value='Desktop')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='Android Phone - Web',value='MobileWeb')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='Android Phone - Moweb',value='MobileWeb')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='Unknown - Moweb',value='MobileWeb')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='Desktop - Safari',value='Desktop')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='Android Tablet - Moweb',value='MobileWeb')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='Android Tablet - Android',value='App')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='Android Tablet - Web',value='MobileWeb')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='iPad - iOS',value='App')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='Desktop - IE',value='Desktop')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='iPad - Web',value='MobileWeb')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='Desktop - Firefox',value='Desktop')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='Android Phone - Android',value='App')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='iPhone - Web',value='MobileWeb')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='Other - Other',value='Other')
+bdf.DevAppCombo = bdf.DevAppCombo.replace(to_replace='iPhone - Moweb',value='MobileWeb')
+
+#Replace NaN values with 0
+bdf.DidSearch = bdf.DidSearch.fillna(0)
+bdf.SentMSG = bdf.SentMSG.fillna(0)
+bdf.SentBR = bdf.SentBR.fillna(0)
+bdf.TotSesTime = bdf.TotSesTime.fillna(0)
+bdf.DevAppCombo = bdf.DevAppCombo.fillna('Other')
+
+#Convert column datatypes for consistancy
+bdf.DidSearch = bdf.DidSearch.astype(int)
+bdf.SentMSG = bdf.SentMSG.astype(int)
+bdf.SentBR = bdf.SentBR.astype(int)
+
+bdf.dtypes
+
+
+# In[ ]:
+
+bdf.TotSesTime.unique()
+
+
+# In[ ]:
+
+# Describe data set
+bdf.describe()
+
+
+# In[ ]:
+
+# Show head of balanced data set
+bdf.head()
+
+
+# In[ ]:
+
+df.DidSearch.unique()
+
+
+# In[ ]:
+
+df.DevAppCombo.unique()
+
+
+# In[ ]:
+
+df.TotSesTime.unique()
+
+
+# In[ ]:
+
+df.TotSesTime.describe()
+
+
+# In[ ]:
+
+# Convert TimeDelta to seconds
+seconds = (pd.to_timedelta(bdf.TotSesTime,unit='d')+pd.to_timedelta(1,unit='s')).astype('timedelta64[s]')
+
+# Add total seconds column
+bdf['TotalSeconds'] = seconds
+
+
+# In[ ]:
+
+bdf.TotalSeconds.describe()
+
+
+# In[ ]:
+
+# Create design matrices
+y2, X2 = dmatrices('DidSearch ~ DevAppCombo + SentMSG +TotalSeconds',
+                 data=bdf,
+                 return_type='dataframe')
+
+
+# In[ ]:
+
+from sklearn import preprocessing
+X2 = preprocessing.scale(X2)
+
+
+# In[ ]:
+
+# Create data partition
+train_y,test_y,train_X,test_X = model_selection.train_test_split(y2, X2,
+                                                                 test_size = 0.7,
+                                                                 random_state = 1)
+
+
+# ### Step 2: Support Vector Machine
+
+# In[ ]:
+
+# Define parameters to test
+parameters = {'kernel':('linear','rbf','poly'),
+'C':[0.001,0.005,0.01,0.025,0.05,1,5,10,100],
+'gamma':[0.01,0.02,0.03,0.04,0.05,0.10,0.2,0.3,0.4,0.5]}
+
+
+# In[ ]:
+
+svc = svm.SVC()
+
+
+# In[ ]:
+
+grid_svc = model_selection.GridSearchCV(svc, parameters, scoring='accuracy')
+
+
+# In[ ]:
+
+grid_svc.fit(train_X,train_y.DidSearch)
+
+
+# In[ ]:
+
+# Show best parameters
+grid_svc.best_params_
+
+
+# #### Now, we create the model using the best parameters.
+
+# In[ ]:
+
+svc_final = svm.SVC(kernel='rbf', C=10, gamma=0.5)
+
+
+# In[ ]:
+
+svc_final.fit(train_X,train_y.DidSearch)
+
+
+# In[ ]:
+
+pred_y_svm = svc_final.predict(test_X)
+
+
+# In[ ]:
+
+print(metrics.confusion_matrix(test_y, pred_y_svm))
+
+
+# In[ ]:
+
+# Calculate accuracy score
+metrics.classification.accuracy_score(test_y, pred_y_svm)
+
+
+# In[ ]:
+
+metrics.cohen_kappa_score(test_y, pred_y_svm)
+
+
+# In[ ]:
+
+print(metrics.classification_report(test_y, pred_y_svm))
+
+
+# ### Step 3: Classification Tree
+
+# In[ ]:
+
+para_dt = {'min_samples_split':np.arange(2,51)}
+para_dt
+
+
+# In[ ]:
+
+dt = tree.DecisionTreeClassifier()
+
+
+# In[ ]:
+
+grid_dt = model_selection.GridSearchCV(dt, para_dt)
+
+
+# In[ ]:
+
+grid_dt.fit(train_X,train_y.DidSearch)
+
+
+# In[ ]:
+
+# Show best parameters
+grid_dt.best_params_
+
+
+# #### Now, we create the model using the best parameters.
+
+# In[ ]:
+
+dt_final = tree.DecisionTreeClassifier(min_samples_split = 44)
+
+
+# In[ ]:
+
+dt_final.fit(train_X,train_y.DidSearch)
+
+
+# In[ ]:
+
+# Import modules
+import pydotplus
+from IPython.display import Image
+
+# Export the decision tree as a graphviz dot object
+dot_data = tree.export_graphviz(dt_final, out_file=None,
+                                feature_names=X.columns,
+                                class_names= ['Accept', 'Reject'],
+                                filled=True, rounded=True,
+                                special_characters=True)
+
+# Convert the dot data into a graph
+graph = pydotplus.graph_from_dot_data(dot_data)
+
+# Show the graph
+Image(graph.create_png())
+
+
+# From the above, we can see the various different outcomes that come from the Classification Tree. The trees and nodes for the True statement are fewer in number and are easier to tell while the trees and nodes for the False side are much more numerous and complex which allows for numerous outcomes.
+
+# In[ ]:
+
+pred_y_dt= dt_final.predict(test_X)
+
+
+# In[ ]:
+
+# Calculate classification accuracy
+metrics.accuracy_score(test_y, pred_y_dt)
+
+
+# In[ ]:
+
+# Calculate AUC
+metrics.roc_auc_score(test_y, pred_y_dt)
+
+
+# In[ ]:
+
+# Calculate Cohen's Kappa
+metrics.cohen_kappa_score(test_y, pred_y_dt)
+
+
+# ### Step 4: Neural Network
+
+# In[ ]:
+
+# Create design matrices
+y3, X3 = dmatrices('DidSearch ~ DevAppCombo+ SentMSG + TotalSeconds',
+                 data=bdf,
+                 return_type='dataframe')
+
+
+# In[ ]:
+
+X_scale = preprocessing.MinMaxScaler().fit_transform(X3)
+y_scale = preprocessing.MinMaxScaler().fit_transform(y3)
+
+
+# In[ ]:
+
+# Show the type of X_scale
+type(X_scale)
+
+
+# In[ ]:
+
+X_scale = pd.DataFrame(X_scale,columns=X3.columns)
+y_scale = pd.DataFrame(y_scale,columns=y3.columns)
+
+
+# In[ ]:
+
+# Show the type of X_scale
+type(X_scale)
+
+
+# In[ ]:
+
+train_y_scale,test_y_scale,train_X_scale,test_X_scale = model_selection.train_test_split(y_scale, X_scale,
+                                                                 test_size=0.7,
+                                                                 random_state=1)
+
+
+# In[ ]:
+
+para_ann = {'hidden_layer_sizes':[(300,),
+                                  (250,),
+                                  (200,),
+                                  (150,),
+                                  (100,),
+                                  (50,),
+                                  (50,10),
+                                  (9,7,5,3)]}
+para_ann
+
+
+# In[ ]:
+
+ann = neural_network.MLPClassifier()
+
+
+# In[ ]:
+
+grid_ann = model_selection.GridSearchCV(ann, para_ann)
+
+
+# In[ ]:
+
+grid_ann.fit(train_X_scale,train_y_scale.DidSearch)
+
+
+# In[ ]:
+
+# Show best parameters
+grid_ann.best_params_
+
+
+# #### Now, we create the model using the best parameters.
+
+# In[ ]:
+
+ann_final = neural_network.MLPClassifier(alpha=1e-5,
+                                   hidden_layer_sizes=(300,),
+                                   random_state=1)
+
+
+# In[ ]:
+
+ann_final.fit(train_X_scale, train_y_scale)
+
+
+# In[ ]:
+
+pred_y_ann = ann_final.predict(test_X_scale)
+
+
+# In[ ]:
+
+# Calculate classification accuracy
+metrics.accuracy_score(test_y_scale, pred_y_ann)
+
+
+# In[ ]:
+
+# Calculate AUC
+metrics.roc_auc_score(test_y_scale, pred_y_ann)
+
+
+# In[ ]:
+
+# Calculate Cohen's Kappa
+metrics.cohen_kappa_score(test_y_scale, pred_y_ann)
+
+
+# ### Step 5: Random Forest
+
+# In[ ]:
+
+from sklearn.grid_search import GridSearchCV
+
+
+# In[ ]:
+
+# Define parameters to test
+params = {'n_estimators':[100,200,300,400,500,600,700,800,900],
+          'max_features':['auto','sqrt','log2']}
+
+
+# In[ ]:
+
+rfc = RandomForestClassifier() 
+
+#param_grid = {
+#    'n_estimators': [200, 700],
+#    'max_features': ['auto', 'sqrt', 'log2']
+#}
+
+CV_rfc = GridSearchCV(estimator=rfc, param_grid=params, cv= 5)
+
+
+# In[ ]:
+
+CV_rfc.fit(train_X, train_y.DidSearch)
+
+
+# In[ ]:
+
+print(CV_rfc.best_params_)
+
+
+# #### Now, we create the model using the best parameters.
+
+# In[ ]:
+
+tuned_rfc = RandomForestClassifier(max_features='auto', n_estimators=100) 
+
+
+# In[ ]:
+
+tuned_rfc.fit(train_X, train_y.DidSearch)
+
+
+# In[ ]:
+
+pred_y_rfc = tuned_rfc.predict(test_X)
+
+
+# In[ ]:
+
+print(metrics.confusion_matrix(test_y, pred_y_rfc))
+
+
+# In[ ]:
+
+# Calculate accuracy score
+metrics.classification.accuracy_score(test_y, pred_y_rfc)
+
+
+# In[ ]:
+
+metrics.cohen_kappa_score(test_y, pred_y_rfc)
+
+
+# In[ ]:
+
+print(metrics.classification_report(test_y, pred_y_rfc))
+
+
+# ### Summarized Findings
+
+# Below is a data frame that summarizes the performance of the classification models.
+
+# In[ ]:
+
+accu = [metrics.accuracy_score(test_y, pred_y_ann),
+        metrics.accuracy_score(test_y, pred_y_dt),
+        metrics.accuracy_score(test_y, pred_y_rfc),
+        metrics.accuracy_score(test_y, pred_y_svm)]
+
+
+# In[ ]:
+
+kappa = [metrics.cohen_kappa_score(test_y, pred_y_ann),
+         metrics.cohen_kappa_score(test_y, pred_y_dt),
+         metrics.cohen_kappa_score(test_y, pred_y_rfc),
+         metrics.cohen_kappa_score(test_y, pred_y_svm)]
+
+
+# In[ ]:
+
+pd.DataFrame({'Accuracy':accu, 
+              'Kappa':kappa},
+             index = ['ANN','Decision Tree','Random Forest','Support Vector Machine'])
+
+
+# Based on the above summary, we see that the support vector machine has the best performance for this classification task. Hence, we recommend using the support vector machine for this data analytics project.
+
+# ### Predictive Modeling Summary
+# 
+# We chose to run our classification methods on the "DidSearch" column rather than the "SentBR" columns due to the nature of a dataset. We did not realize going into this project that we have selected such an unbananced dataset for our dependent variable. Due to the unbalanced nature of this variable, we were forced to select a replacement, "DidSearch". In order for the prediction methods to work properly, a balaced dataset is required so that there is enough data for the algorithm to learn the pattern of the data. Our original variable only showed that about 2% of users actually submitted a booking request. This means that our prediction algorithms would only have a handful of samples, less than 200, to actually build a pattern off of. Due to this low amout of sample, we cannot create a balanced dataset off of this variable, so our best option was to use the "DidSearch" column since it has about 1200 records. We were able to take these records as well as an equal number of records for those that did not perform a search on their first visit and combine them to create a new balanced datset.
+
+# ### Conclusions and Final Thoughts
+
+# Ideally, we would like to have a dataset with a larger number of users who actually submitted a booking request, which would tie in with our original research goal. Currently, the dataset provided by Airbnb has a very small number of users who submitted a booking request, which makes it very difficult to draw meaningful conclusions for the business. Hence, the dataset from Airbnb is unbalanced and we cannot determine factors which may have influenced the user's decision to submit a booking request. Whether or not a user submits a booking request is what actually generates revenue for the company--the most important factor for any business. Any implications we draw from this new dependent variable will not be very interesting for Airbnb. Unfortunatly, the dataset does not have any other variables that would be of any interest to managment at Airbnb.
+# 
+# In terms of business implications, it is difficult for us to provide meaningful suggestions or conclusions because our project was changed significantly at the last minute when we found out that our dependent variable (i.e., if the user sent a booking request) could not be used. As a result, we could not complete our original research goal.
+# 
+# With the new dependent variable (i.e., if the user performed a search) we used 3 classification methods that are black-box and 1 that is white-box. In other words, we don't know the underlying logic behind these black-box calculations. Since 75% of our classification methods are black-box and only 25% are white-box it is very difficult to compair them. Hence, we can only provide recommendations on which method has the best performance. In this case, the support vector machine has the best performance with approximately 74.5% classification accuracy.
+# 
+# Had we had more time to work on this project we would have liked to add more dummy columns, specifically hour and month columns. This would allow us to determine whether or not the time of the day or time of the year had any impact on whether or not a user booked with airbnb. This is the kind of information the marketing staff of Airbnb would be highly interested in. Using this data, target ad campaigns could be launched to increase the ammount of booking requests during the slow part of the year. We would have also liked to shift the focus of the dataset from that of a session log to more of time oriented dataset. This, combined with a more balaced data set would allow us to create some pretty significant data results for Airbnb.
+# 
+# It is due to these time and data constrains that our project shifted from a structed resear project guided by research questions to a more exploratory research project. Unfortunatly, we were not able to concisely answer all of our research questions, but we were able to answer some. For example, questions 5 asks about users with multiple sessions being more likely to book a room. We were able to find with our dataset that whether or not the user booked on the first or second session, the booking rate was about 2%.
